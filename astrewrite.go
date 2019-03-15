@@ -1,8 +1,16 @@
 package astrewrite
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
+	"go/format"
+	"go/printer"
+	"go/token"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"runtime"
 )
 
 // WalkFunc describes a function to be called for each node during a Walk. The
@@ -359,4 +367,85 @@ func walkDeclList(list []ast.Decl, fn WalkFunc) {
 	for i, x := range list {
 		list[i] = Walk(x, fn).(ast.Decl)
 	}
+}
+
+// WriteFile write an AST node to the file with a pre-defined printer.Config.
+func WriteFile(fset *token.FileSet, node ast.Node, filepath string) error {
+	f, err := os.Open(filepath)
+	if err != nil {
+		return err
+
+	}
+	defer f.Close()
+
+	var perm os.FileMode
+	if fi, err := f.Stat(); err == nil {
+		perm = fi.Mode().Perm()
+	} else {
+		return err
+
+	}
+
+	src, err := ioutil.ReadAll(f)
+	if err != nil {
+		return err
+	}
+
+	var dst bytes.Buffer
+	cfg := printer.Config{Tabwidth: 8, Mode: printer.TabIndent | printer.UseSpaces}
+	if err := cfg.Fprint(&dst, fset, node); err != nil {
+		return err
+	}
+
+	// run go format to pretty-prints
+	bs, err := format.Source(dst.Bytes())
+	if err != nil {
+		return err
+	}
+
+	backname, err := backupFile(filepath+".", src, perm)
+	if err != nil {
+		return err
+	}
+
+	if err := ioutil.WriteFile(filepath, bs, perm); err != nil {
+		os.Rename(backname, filepath)
+		return err
+
+	}
+
+	if err := os.Remove(backname); err != nil {
+		return err
+
+	}
+
+	return nil
+}
+
+// backupFile this code block copied from go standard library.
+func backupFile(filename string, data []byte, perm os.FileMode) (string, error) {
+	backfile, err := ioutil.TempFile(filepath.Dir(filename), filepath.Base(filename))
+	if err != nil {
+		return "", err
+
+	}
+	backname := backfile.Name()
+	if runtime.GOOS != "windows" {
+		err = backfile.Chmod(perm)
+		if err != nil {
+			backfile.Close()
+			os.Remove(backname)
+			return backname, err
+		}
+
+	}
+	if _, err := backfile.Write(data); err != nil {
+		return backname, err
+
+	}
+	if err := backfile.Close(); err != nil {
+		return backname, err
+
+	}
+	return backname, nil
 }
