@@ -18,7 +18,7 @@ import (
 	"go/printer"
 	"go/token"
 
-	"github.com/fatih/astrewrite"
+	"github.com/barryz/astrewrite"
 )
 
 func main() {
@@ -52,6 +52,12 @@ type Foo struct{}`
 	// package main
 	//
 	// type Bar struct{}
+
+	// Write ast change to file
+	filepath := "/path/to/your/source/code.go"
+	if err := astrewrite.WriteFile(fset, rewritten, filepath); err !=nil {
+		panic(err)
+    }
 }
 ```
 
